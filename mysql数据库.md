@@ -293,6 +293,7 @@ class 模型类名(models.Model):
   ```
 
 - 文档参见:
+  
   - <https://docs.djangoproject.com/en/1.11/ref/models/fields/#field-options>
 
 ## 数据库的基本操作
@@ -489,9 +490,240 @@ a = MyModel.objects.values('列1')
 result = a.annotate(名=聚合函数('列1')
 ```
 
+### F对象
 
+```
+一个F对象代表数据库中某条记录的字段的信息
+```
 
+作用
 
+- 通常是对数据库中的字段值在不获取的情况下进行操作
+- 用于类属性(字段)之间的比较。
 
+用法
 
+```python
+# F对象在数据包 django.db.models 中，使用时需要先导入
+from django.db.models import F
+F('列名')
+```
+
+说明
+
+```python
+- 一个 F() 对象代表了一个model的字段的值
+- F对象通常是对数据库中的字段值在不加载到内存中的情况下直接在数据库服务器端进行操作
+```
+
+示例
+
+- 更新Book实例中所有的零售价涨10元
+
+```python
+models.Book.objects.all().update(market_price=F('market_price')+10)
+# 以下做法好于如下代码
+books = models.Book.objects.all()
+for book in books:
+    book.update(market_price=book.marget_price+10)
+    book.save()
+```
+
+### Q对象
+
+```python
+	当在获取查询结果集 使用复杂的逻辑或  `|` 、 逻辑非 `~` 等操作时可以借助于 Q对象进行操作
+```
+
+数据包
+
+```python
+from django.db.models import Q
+```
+
+1. 作用
+
+   - 在条件中用来实现除 and(&) 以外的 or(|) 或 not(~) 操作
+
+2. 运算符:
+
+   - & 与操作
+   - | 或操作
+   - 〜 非操作
+
+3. 语法
+
+   ```python
+   from django.db.models import Q
+   Q(条件1)|Q(条件2)  # 条件1成立或条件2成立
+   Q(条件1)&Q(条件2)  # 条件1和条件2同时成立
+   Q(条件1)&~Q(条件2)  # 条件1成立且条件2不成立
+   ...
+   ```
+
+### 原生的数据库操作方法
+
+- 使用MyModel.objects.raw()进行 数据库查询操作查询
+
+```python
+MyModel.objects.raw(sql语句)
+返回值:QuerySet 集合对象
+```
+
+- 使用django中的游标cursor对数据库进行 增删改操作
+
+```python
+1.导入cursor所在的包
+`from django.db import connection`
+2.用创建cursor类的构造函数创建cursor对象，再使用cursor对象,为保证在出现异常时能释放cursor资源,通常使用with语句进行创建操作
+from django.db import connection
+with connection.cursor() as cur:
+    cur.execute('执行SQL语句')
+```
+
+## 数据表关联关系映射
+
+### 一对一映射
+
+- 一对一是表示现实事物间存在的一对一的对应关系。
+
+```python
+class A(model.Model):
+    ...
+
+class B(model.Model):
+    属性 = models.OneToOneField(A)
+```
+
+###### 用法示例
+
+```python
+# file : xxxxxxxx/models.py
+from django.db import models
+
+class Author(models.Model):
+    '''作家模型类'''
+    name = models.CharField('作家', max_length=50)
+
+class Wife(models.Model):
+    '''作家妻子模型类'''
+    name = models.CharField("妻子", max_length=50)
+    author = models.OneToOneField(Author)  # 增加一对一属性
+```
+
+查询
+
+- 在 Wife 对象中,通过 author 属性找到对应的author对象
+
+```python
+# 通过 wife 找 author
+wife = models.Wife.objects.get('')
+print(wife.name,'的丈夫是',wife.authoe.name)
+```
+
+- 在 Author 对象中,通过 wife 属性找到对应的wife对象
+
+```python
+# 通过 author.wife 关联属性 找 wife,如果没有对应的wife则触发异常
+author = models.Author.objects.get('')
+try:
+    print(author2.name, '的妻子是', author2.wife.name)
+except:
+    print(author2.name, '还没有妻子')
+```
+
+- 作用
+
+```
+主要是解决常用数据不常用数据的存储问题,把经常加载的一个数据放在主表中，不常用数据放在另一个副表中，这样在访问主表数据时不需要加载副表中的数据以提高访问速度提高效率和节省内存空间,如经常把书的内容和书名建成两张表，因为在网站上经常访问书名等信息，但不需要得到书的内容。
+```
+
+### 一对多映射
+
+- 一对多是表示现实事物间存在的一对多的对应关系。
+
+```python
+class A(model.Model):   一
+    ...
+
+class B(model.Model):   多
+    属性 = models.ForeignKey(多对一中"一"的模型类, ...)
+```
+
+```python
+- 构造函数
+ForeignKey(to, on_delete, **options)
+- 参数
+
+on_delete
+1.models.CASCADE  级联删除。 Django模拟SQL约束ON DELETE CASCADE的行为，并删除包含ForeignKey的对象。
+--mysql 里面 依旧还是 强硬版
+  django  A主id=1   B从-f_id=1
+  A想删除 id=1 数据； django先帮您把从表数据删除，再回来删除主表的数据
+2.models.PROTECT 抛出ProtectedError 以阻止被引用对象的删除;
+3.SET_NULL 设置ForeignKey null；需要指定null=True
+4.SET_DEFAULT  将ForeignKey设置为其默认值；必须设置ForeignKey的默认值。
+
+**options
+1.null
+2.unique
+3. ...
+```
+
+###### 用法示例
+
+```python
+class A(model.Model):
+    name = models.CharField(max_length=50)
+
+class B(model.Model):
+    name = models.CharField(max_length=50)
+    a = models.ForeignKey(A,models.CASCADE)
+```
+
+查询
+
+通过多查一
+
+```python
+b = models.B.objects.get('')
+print(b.a.name)
+```
+
+通过一查多
+
+```python
+a = models.A.objects.get('')
+print(a.b_set.all())	# 通过b_set 获取对应的多个B数据对象
+```
+
+### 多对多映射
+
+- 多对多表达对象之间多对多复杂关系，如: 每个人都有不同的学校(小学，初中，高中,...),每个学校都有不同的学生...
+
+```python
+class A(models.Model):
+    ...
+
+class B(models.Model):
+    ...
+    a = models.ManyToManyField(A)
+```
+
+###### 数据查询
+
+通过 B 查询对应的所有的 A
+
+```python
+b = models.objects.get('')
+b.a.all()
+```
+
+通过 A 查询对应的所有的 B
+
+```python
+Django会生成一个关联属性 b_set 用于表示对对应的b的查询对象相关操作
+a = models.objects.get('')
+a.b.all()
+```
 
